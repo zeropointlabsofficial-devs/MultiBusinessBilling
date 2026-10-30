@@ -1,0 +1,500 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  SYSTEM_ADMIN
+  BUSINESS_ADMIN
+  BILLING_OPERATOR
+  VIEWER
+  TESTING_USER
+}
+
+enum InvoiceStatus {
+  FINALIZED
+  CANCELLED
+}
+
+enum PurchaseStatus {
+  RECEIVED
+  CANCELLED
+}
+
+enum StockMovementType {
+  OPENING
+  PURCHASE
+  SALE
+  SALES_RETURN
+  SALE_CANCELLATION
+  PURCHASE_RETURN
+  ADJUSTMENT
+  DAMAGE
+}
+
+enum PairedDeviceStatus {
+  PENDING
+  APPROVED
+  REVOKED
+}
+
+model Business {
+  id           String              @id @default(uuid()) @db.Uuid
+  name         String              @unique
+  category     String
+  isActive     Boolean             @default(true)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  memberships  UserBusinessRole[]
+  products     Product[]
+  customers    Customer[]
+  suppliers    Supplier[]
+  invoices     Invoice[]
+  priceChanges ProductPriceHistory[]
+  stock        InventoryBalance[]
+  movements    StockMovement[]
+  auditLogs    AuditLog[]
+  purchases    Purchase[]
+  salesReturns SalesReturn[]
+  purchaseReturns PurchaseReturn[]
+  settings     BusinessSettings?
+  invoiceCounters InvoiceCounter[]
+  purchaseCounters PurchaseCounter[]
+  pairedDevices PairedDevice[]
+  pairingInvitations PairingInvitation[]
+}
+
+model User {
+  id           String              @id @default(uuid()) @db.Uuid
+  username     String              @unique
+  passwordHash String
+  displayName  String
+  isActive     Boolean             @default(true)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  memberships  UserBusinessRole[]
+  sessions     UserSession[]
+  auditLogs    AuditLog[]
+  priceChanges ProductPriceHistory[]
+  stockMovements StockMovement[]
+  invoices     Invoice[]
+  purchases    Purchase[]
+  salesReturns SalesReturn[]
+  purchaseReturns PurchaseReturn[]
+  cancelledInvoices Invoice[] @relation("InvoiceCancelledBy")
+  pairingInvitations PairingInvitation[]
+  approvedDevices PairedDevice[] @relation("PairedDeviceApprover")
+
+  @@index([isActive])
+}
+
+model UserBusinessRole {
+  userId     String   @db.Uuid
+  businessId String   @db.Uuid
+  role       Role
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@id([userId, businessId])
+  @@index([businessId, role])
+}
+
+model UserSession {
+  id        String   @id @default(uuid()) @db.Uuid
+  tokenHash String   @unique
+  userId    String   @db.Uuid
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt])
+}
+
+model PairingInvitation {
+  id          String   @id @default(uuid()) @db.Uuid
+  businessId  String   @db.Uuid
+  createdById String   @db.Uuid
+  tokenHash   String   @unique
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+  redeemedAt  DateTime?
+  redeemedDeviceId String? @db.Uuid
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([businessId, expiresAt])
+}
+
+model PairedDevice {
+  id               String             @id @default(uuid()) @db.Uuid
+  deviceId         String             @unique @db.Uuid
+  businessId       String             @db.Uuid
+  name             String
+  credentialHash   String             @unique
+  pollTokenHash    String
+  pairingExpiresAt DateTime
+  status           PairedDeviceStatus @default(PENDING)
+  createdAt        DateTime           @default(now())
+  approvedAt       DateTime?
+  approvedById     String?            @db.Uuid
+  revokedAt        DateTime?
+  lastSeenAt       DateTime?
+  business         Business           @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  approvedBy       User?              @relation("PairedDeviceApprover", fields: [approvedById], references: [id], onDelete: Restrict)
+
+  @@index([businessId, status, createdAt])
+  @@index([pairingExpiresAt])
+}
+
+model Product {
+  id                     String              @id @default(uuid()) @db.Uuid
+  businessId             String              @db.Uuid
+  name                   String
+  sku                    String
+  barcode                String?
+  category               String?
+  brand                  String?
+  model                  String?
+  variant                String?
+  specifications         String?
+  packSize               String?
+  catalogSourceUrl       String?
+  unit                   String               @default("Piece")
+  hsnCode                String?
+  gstRate                Decimal?             @db.Decimal(5, 2)
+  purchasePrice          Decimal?             @db.Decimal(12, 2)
+  sellingPrice           Decimal?             @db.Decimal(12, 2)
+  minimumStock           Decimal              @default(0) @db.Decimal(14, 3)
+  tracksSerialNumbers    Boolean              @default(false)
+  warrantyMonths         Int?
+  isActive               Boolean              @default(true)
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  business               Business             @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  priceHistory            ProductPriceHistory[]
+  inventoryBalance        InventoryBalance?
+  stockMovements          StockMovement[]
+  invoiceLines            InvoiceLine[]
+  purchaseLines           PurchaseLine[]
+
+  @@unique([businessId, sku])
+  @@unique([businessId, barcode])
+  @@index([businessId, name])
+  @@index([businessId, category])
+  @@index([businessId, brand])
+  @@index([businessId, isActive])
+}
+
+model ProductPriceHistory {
+  id         String   @id @default(uuid()) @db.Uuid
+  businessId String   @db.Uuid
+  productId  String   @db.Uuid
+  actorId    String   @db.Uuid
+  oldPrice   Decimal? @db.Decimal(12, 2)
+  newPrice   Decimal? @db.Decimal(12, 2)
+  reason     String?
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  actor      User     @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([businessId, productId, createdAt])
+}
+
+model InventoryBalance {
+  businessId String   @db.Uuid
+  productId  String   @unique @db.Uuid
+  quantity   Decimal  @default(0) @db.Decimal(14, 3)
+  updatedAt  DateTime @updatedAt
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@id([businessId, productId])
+  @@index([businessId, quantity])
+}
+
+model StockMovement {
+  id             String            @id @default(uuid()) @db.Uuid
+  businessId     String            @db.Uuid
+  productId      String            @db.Uuid
+  actorId        String            @db.Uuid
+  quantityChange Decimal           @db.Decimal(14, 3)
+  type           StockMovementType
+  reference      String?
+  reason         String?
+  createdAt      DateTime          @default(now())
+  business       Business          @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  product        Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  actor          User              @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([businessId, productId, createdAt])
+  @@index([businessId, type, createdAt])
+}
+
+model Customer {
+  id         String   @id @default(uuid()) @db.Uuid
+  businessId String   @db.Uuid
+  name       String
+  phone      String?
+  address    String?
+  gstin      String?
+  stateCode  String?
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  invoices   Invoice[]
+
+  @@index([businessId, name])
+  @@index([businessId, phone])
+}
+
+model Supplier {
+  id         String   @id @default(uuid()) @db.Uuid
+  businessId String   @db.Uuid
+  name       String
+  phone      String?
+  address    String?
+  gstin      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  purchases  Purchase[]
+
+  @@index([businessId, name])
+}
+
+model Invoice {
+  id             String         @id @default(uuid()) @db.Uuid
+  businessId     String         @db.Uuid
+  invoiceNumber  String
+  idempotencyKey String
+  requestHash    String
+  customerId     String?        @db.Uuid
+  actorId        String         @db.Uuid
+  status         InvoiceStatus  @default(FINALIZED)
+  subtotal       Decimal        @db.Decimal(14, 2)
+  taxTotal       Decimal        @db.Decimal(14, 2)
+  grandTotal     Decimal        @db.Decimal(14, 2)
+  createdAt      DateTime       @default(now())
+  business       Business      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  customer       Customer?     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  actor          User          @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  lines          InvoiceLine[]
+  payments       PaymentAllocation[]
+  returns        SalesReturn[]
+  cancelledBy    User?          @relation("InvoiceCancelledBy", fields: [cancelledById], references: [id], onDelete: Restrict)
+  cancelledById  String?        @db.Uuid
+  cancelledAt    DateTime?
+  cancellationReason String?
+
+  @@unique([businessId, invoiceNumber])
+  @@unique([businessId, idempotencyKey])
+  @@index([businessId, createdAt])
+  @@index([businessId, status, createdAt])
+}
+
+model InvoiceLine {
+  id             String   @id @default(uuid()) @db.Uuid
+  invoiceId      String   @db.Uuid
+  productId      String   @db.Uuid
+  productName    String
+  sku            String
+  hsnCode        String?
+  unit           String
+  quantity       Decimal  @db.Decimal(14, 3)
+  unitPrice      Decimal  @db.Decimal(12, 2)
+  discountPercent Decimal @default(0) @db.Decimal(5, 2)
+  discountAmount Decimal  @default(0) @db.Decimal(12, 2)
+  gstRate        Decimal  @db.Decimal(5, 2)
+  taxableValue   Decimal  @db.Decimal(14, 2)
+  taxAmount      Decimal  @db.Decimal(14, 2)
+  lineTotal      Decimal  @db.Decimal(14, 2)
+  invoice        Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  returns        SalesReturnLine[]
+
+  @@index([invoiceId])
+  @@index([productId])
+}
+
+model PaymentAllocation {
+  id        String   @id @default(uuid()) @db.Uuid
+  invoiceId String   @db.Uuid
+  method    String
+  amount    Decimal  @db.Decimal(14, 2)
+  createdAt DateTime @default(now())
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@index([invoiceId])
+}
+
+model Purchase {
+  id                    String         @id @default(uuid()) @db.Uuid
+  businessId            String         @db.Uuid
+  supplierId            String         @db.Uuid
+  purchaseNumber        String
+  idempotencyKey        String
+  requestHash           String
+  supplierInvoiceNumber String?
+  actorId               String         @db.Uuid
+  status                PurchaseStatus @default(RECEIVED)
+  purchaseDate          DateTime       @default(now())
+  subtotal              Decimal        @db.Decimal(14, 2)
+  taxTotal              Decimal        @db.Decimal(14, 2)
+  grandTotal            Decimal        @db.Decimal(14, 2)
+  createdAt             DateTime       @default(now())
+  business              Business       @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  supplier              Supplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  actor                 User           @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  lines                 PurchaseLine[]
+  returns               PurchaseReturn[]
+
+  @@unique([businessId, purchaseNumber])
+  @@unique([businessId, idempotencyKey])
+  @@index([businessId, createdAt])
+}
+
+model PurchaseCounter {
+  businessId String   @db.Uuid
+  year       Int
+  lastNumber Int      @default(0)
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@id([businessId, year])
+}
+
+model PurchaseLine {
+  id           String   @id @default(uuid()) @db.Uuid
+  purchaseId   String   @db.Uuid
+  productId    String   @db.Uuid
+  productName  String
+  quantity     Decimal  @db.Decimal(14, 3)
+  unitCost     Decimal  @db.Decimal(12, 2)
+  discountAmount Decimal @default(0) @db.Decimal(12, 2)
+  gstRate      Decimal  @db.Decimal(5, 2)
+  taxableValue Decimal  @db.Decimal(14, 2)
+  taxAmount    Decimal  @db.Decimal(14, 2)
+  lineTotal    Decimal  @db.Decimal(14, 2)
+  purchase     Purchase @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  returns      PurchaseReturnLine[]
+
+  @@index([purchaseId])
+}
+
+model SalesReturn {
+  id         String   @id @default(uuid()) @db.Uuid
+  businessId String   @db.Uuid
+  invoiceId  String   @db.Uuid
+  actorId    String   @db.Uuid
+  idempotencyKey String
+  requestHash String
+  reason     String
+  refundMethod String
+  refundTotal Decimal @db.Decimal(14, 2)
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  invoice    Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  actor      User     @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  lines      SalesReturnLine[]
+
+  @@unique([businessId, idempotencyKey])
+  @@index([businessId, createdAt])
+}
+
+model SalesReturnLine {
+  id            String      @id @default(uuid()) @db.Uuid
+  salesReturnId String      @db.Uuid
+  invoiceLineId String      @db.Uuid
+  quantity      Decimal     @db.Decimal(14, 3)
+  refundAmount  Decimal     @db.Decimal(14, 2)
+  returnToStock Boolean     @default(false)
+  salesReturn   SalesReturn @relation(fields: [salesReturnId], references: [id], onDelete: Restrict)
+  invoiceLine   InvoiceLine @relation(fields: [invoiceLineId], references: [id], onDelete: Restrict)
+
+  @@index([salesReturnId])
+  @@index([invoiceLineId])
+}
+
+model PurchaseReturn {
+  id             String              @id @default(uuid()) @db.Uuid
+  businessId     String              @db.Uuid
+  purchaseId     String              @db.Uuid
+  actorId        String              @db.Uuid
+  idempotencyKey String
+  requestHash String
+  reason         String
+  refundMethod   String
+  refundTotal    Decimal             @db.Decimal(14, 2)
+  createdAt      DateTime            @default(now())
+  business       Business            @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  purchase       Purchase            @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  actor          User                @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  lines          PurchaseReturnLine[]
+
+  @@unique([businessId, idempotencyKey])
+  @@index([businessId, createdAt])
+}
+
+model PurchaseReturnLine {
+  id               String         @id @default(uuid()) @db.Uuid
+  purchaseReturnId String         @db.Uuid
+  purchaseLineId   String         @db.Uuid
+  quantity         Decimal        @db.Decimal(14, 3)
+  refundAmount     Decimal        @db.Decimal(14, 2)
+  purchaseReturn   PurchaseReturn @relation(fields: [purchaseReturnId], references: [id], onDelete: Restrict)
+  purchaseLine     PurchaseLine   @relation(fields: [purchaseLineId], references: [id], onDelete: Restrict)
+}
+
+model BusinessSettings {
+  businessId    String   @id @db.Uuid
+  address       String?
+  phone         String?
+  gstin         String?
+  stateCode     String?
+  invoicePrefix String   @default("INV")
+  allowCredit   Boolean  @default(false)
+  pricesIncludeGst Boolean?
+  logoDataUrl String?
+  termsAndConditions String?
+  warrantyNote String?
+  bankDetails String?
+  authorisedSignatory String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+}
+
+model InvoiceCounter {
+  businessId String   @db.Uuid
+  year       Int
+  lastNumber Int      @default(0)
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@id([businessId, year])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  businessId String?  @db.Uuid
+  actorId    String?  @db.Uuid
+  action     String
+  entityType String?
+  entityId   String?
+  details    Json?
+  createdAt  DateTime @default(now())
+  business   Business? @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  actor      User?     @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+}

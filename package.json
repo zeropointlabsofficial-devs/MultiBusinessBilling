@@ -1,0 +1,29 @@
+{
+  "name": "multi-business-billing",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev --workspace @billing/server\" \"npm:dev --workspace @billing/desktop\"",
+    "typecheck": "npm run typecheck --workspace @billing/server && npm run typecheck --workspace @billing/desktop",
+    "test": "npm run test --workspace @billing/server",
+    "test:integration": "npm run test:integration --workspace @billing/server",
+    "build": "npm run build --workspace @billing/server && npm run build --workspace @billing/desktop",
+    "db:generate": "npm run db:generate --workspace @billing/server",
+    "db:migrate": "npm run db:migrate --workspace @billing/server"
+  },
+  "devDependencies": {
+    "concurrently": "9.2.5"
+  },
+  "allowScripts": {
+    "@prisma/client@6.16.2": true,
+    "argon2@0.44.0": true,
+    "esbuild@0.25.12": true,
+    "prisma@7.10.1": true,
+    "@prisma/engines@7.10.1": true,
+    "esbuild@0.28.2": true
+  }
+}

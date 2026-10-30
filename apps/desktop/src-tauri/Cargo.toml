@@ -1,0 +1,13 @@
+[package]
+name = "multi-business-billing"
+version = "0.1.0"
+description = "Business billing and inventory desktop client"
+authors = ["Multi-Business Billing"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2.5.0", features = [] }
+
+[dependencies]
+keyring = "4.2.0"
+tauri = { version = "2.8.0", features = [] }

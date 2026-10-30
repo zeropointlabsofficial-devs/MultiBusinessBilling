@@ -1,0 +1,15 @@
+node_modules/
+dist/
+target/
+.env
+.env.*
+!.env.example
+*.log
+coverage/
+src-tauri/gen/
+src-tauri/target/
+
+# Generated files
+apps/desktop/src-tauri/gen/
+apps/desktop/tsconfig.app.tsbuildinfo
+
